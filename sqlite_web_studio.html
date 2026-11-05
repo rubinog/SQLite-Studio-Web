@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="it" class="h-full dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SQLite Studio Web - Explorer & Editor</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- SQL.js (WebAssembly) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+    }
+    .dark ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.4);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(156, 163, 175, 0.7);
+    }
+    .monospace {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+  </style>
+</head>
+<body class="h-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200 overflow-hidden select-none">
+
+  <!-- TOP HEADER / NAVBAR -->
+  <header class="h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 flex items-center justify-between shrink-0 z-20">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-500/20">
+        <i data-lucide="database" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="text-sm font-semibold tracking-wide flex items-center gap-2">
+          <span>SQLite Studio Web</span>
+          <span id="db-badge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">Nessun DB</span>
+        </h1>
+        <p id="db-meta" class="text-xs text-slate-500 dark:text-slate-400">Database in-memory via WebAssembly</p>
+      </div>
+    </div>
+
+    <!-- Actions & Toolbar -->
+    <div class="flex items-center gap-2">
+      <!-- File input hidden -->
+      <input type="file" id="file-input" accept=".db,.sqlite,.sqlite3" class="hidden">
+      
+      <button id="btn-upload" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5" title="Carica file .db">
+        <i data-lucide="folder-open" class="w-4 h-4 text-indigo-500"></i>
+        <span class="hidden sm:inline">Apri DB</span>
+      </button>
+
+      <button id="btn-new-db" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5" title="Nuovo database vuoto">
+        <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-500"></i>
+        <span class="hidden sm:inline">Nuovo DB</span>
+      </button>
+
+      <button id="btn-demo-db" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 transition flex items-center gap-1.5" title="Carica database di esempio">
+        <i data-lucide="sparkles" class="w-4 h-4 text-indigo-500"></i>
+        <span class="hidden md:inline">Demo DB</span>
+      </button>
+
+      <div class="h-5 w-px bg-slate-200 dark:bg-slate-800 mx-1"></div>
+
+      <!-- Export DB -->
+      <button id="btn-export-db" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+        <i data-lucide="download" class="w-4 h-4"></i>
+        <span>Salva / Esporta DB</span>
+      </button>
+
+      <!-- Theme Switcher -->
+      <button id="btn-theme" class="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Cambia tema chiaro/scuro">
+        <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+        <i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN APP CONTAINER -->
+  <div class="flex flex-1 overflow-hidden relative">
+
+    <!-- DRAG & DROP OVERLAY (when dragging over window) -->
+    <div id="drop-overlay" class="absolute inset-0 bg-indigo-600/20 backdrop-blur-sm z-50 border-4 border-dashed border-indigo-500 flex flex-col items-center justify-center pointer-events-none opacity-0 transition-opacity duration-200">
+      <div class="p-6 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col items-center gap-3">
+        <i data-lucide="upload-cloud" class="w-12 h-12 text-indigo-500 animate-bounce"></i>
+        <p class="text-base font-semibold">Rilascia qui il file SQLite (.db, .sqlite)</p>
+      </div>
+    </div>
+
+    <!-- SIDEBAR: TABLES & SCHEMA -->
+    <aside id="sidebar" class="w-64 sm:w-72 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 flex flex-col shrink-0">
+      <div class="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+          <i data-lucide="table" class="w-3.5 h-3.5"></i> Tabelle & Viste
+        </span>
+        <button id="btn-new-table" class="p-1 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800" title="Crea nuova tabella">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Quick Search Tables -->
+      <div class="p-2 border-b border-slate-200 dark:border-slate-800">
+        <div class="relative">
+          <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400"></i>
+          <input type="text" id="filter-tables" placeholder="Filtra schema..." class="w-full bg-slate-100 dark:bg-slate-800/80 text-xs pl-8 pr-3 py-1.5 rounded-md outline-none focus:ring-1 focus:ring-indigo-500 border border-transparent dark:border-slate-700/50">
+        </div>
+      </div>
+
+      <!-- Tables list container -->
+      <div id="tables-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+        <div class="text-center py-10 px-4 text-xs text-slate-400 dark:text-slate-500">
+          Nessun database aperto.<br>Carica un file o avvia la demo.
+        </div>
+      </div>
+
+      <!-- Database Stats footer -->
+      <div class="p-2.5 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
+        <span id="tables-count">0 Tabelle</span>
+        <button id="btn-refresh-schema" class="hover:text-indigo-500 flex items-center gap-1">
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i> Ricarica
+        </button>
+      </div>
+    </aside>
+
+    <!-- CONTENT AREA -->
+    <main class="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+      
+      <!-- NAVIGATION TABS -->
+      <div class="h-10 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 px-4 flex items-center gap-4 shrink-0">
+        <button id="tab-btn-explorer" class="h-full border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 font-medium text-xs flex items-center gap-2 px-1">
+          <i data-lucide="layout-grid" class="w-4 h-4"></i>
+          <span>Data Explorer</span>
+        </button>
+        <button id="tab-btn-sql" class="h-full border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium text-xs flex items-center gap-2 px-1">
+          <i data-lucide="terminal" class="w-4 h-4"></i>
+          <span>SQL Console</span>
+        </button>
+        <button id="tab-btn-info" class="h-full border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium text-xs flex items-center gap-2 px-1">
+          <i data-lucide="info" class="w-4 h-4"></i>
+          <span>Schema & DDL</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: DATA EXPLORER -->
+      <section id="view-explorer" class="flex-1 flex flex-col overflow-hidden">
+        <!-- Explorer Sub-Toolbar -->
+        <div class="h-12 border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-900/40 px-4 flex items-center justify-between gap-3 shrink-0">
+          <div class="flex items-center gap-2 flex-1 max-w-lg">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500" id="current-table-label">Tabella: -</span>
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400"></i>
+              <input type="text" id="table-search-input" placeholder="Cerca nei record..." class="w-full bg-white dark:bg-slate-800 text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-add-record" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 shadow-sm transition disabled:opacity-40">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Nuovo Record</span>
+            </button>
+            <button id="btn-export-csv" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-500"></i>
+              <span>CSV</span>
+            </button>
+            <button id="btn-export-json" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1">
+              <i data-lucide="code" class="w-3.5 h-3.5 text-amber-500"></i>
+              <span>JSON</span>
+            </button>
+            <button id="btn-drop-table" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 flex items-center gap-1" title="Elimina tabella corrente">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              <span>Drop</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Explorer Table Grid -->
+        <div class="flex-1 overflow-auto relative select-text" id="grid-container">
+          <div id="grid-empty" class="h-full flex flex-col items-center justify-center text-slate-400 text-sm">
+            <i data-lucide="table-2" class="w-12 h-12 mb-2 stroke-1 text-slate-300 dark:text-slate-600"></i>
+            Seleziona una tabella dalla barra laterale
+          </div>
+          <table id="data-table" class="w-full text-left border-collapse text-xs hidden">
+            <thead class="bg-slate-100 dark:bg-slate-900 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+              <tr id="table-headers"></tr>
+            </thead>
+            <tbody id="table-body" class="divide-y divide-slate-200 dark:divide-slate-800/80 bg-white dark:bg-slate-950"></tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Bar -->
+        <div class="h-11 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 shrink-0">
+          <div class="flex items-center gap-2">
+            <span>Righe per pagina:</span>
+            <select id="page-size-select" class="bg-slate-100 dark:bg-slate-800 rounded px-2 py-1 text-xs border border-slate-200 dark:border-slate-700 outline-none">
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="500">500</option>
+            </select>
+            <span id="pagination-stats" class="ml-2">Mostrando 0 - 0 di 0</span>
+          </div>
+
+          <div class="flex items-center gap-1">
+            <button id="btn-page-prev" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+            <span id="page-current-display" class="px-2 font-medium">Pagina 1 di 1</span>
+            <button id="btn-page-next" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none">
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: SQL CONSOLE -->
+      <section id="view-sql" class="flex-1 flex flex-col overflow-hidden hidden">
+        <!-- SQL Input Area -->
+        <div class="p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-slate-900/50 shrink-0">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Editor SQL</span>
+              <span class="text-[11px] text-slate-400">Premi <kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[10px]">Ctrl</kbd> + <kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[10px]">Invio</kbd> per eseguire</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btn-clear-sql" class="px-2.5 py-1 text-xs rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">Pulisci</button>
+              <button id="btn-run-sql" class="px-3 py-1 text-xs font-semibold rounded bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 shadow">
+                <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i> Esegui Query
+              </button>
+            </div>
+          </div>
+          <textarea id="sql-input" rows="5" class="w-full p-3 font-mono text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 resize-y" placeholder="Scrivi qui la query SQL (es. SELECT * FROM utenti WHERE id > 10;)..."></textarea>
+        </div>
+
+        <!-- SQL Results Toolbar -->
+        <div class="h-8 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-4 flex items-center justify-between text-xs text-slate-500 shrink-0">
+          <span id="sql-status-bar">Pronto per eseguire query</span>
+          <div class="flex items-center gap-3">
+            <select id="sql-history-select" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-0.5 text-[11px] max-w-xs truncate outline-none">
+              <option value="">-- Cronologia Query --</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- SQL Output Table/Error -->
+        <div class="flex-1 overflow-auto p-4 select-text" id="sql-output-container">
+          <div id="sql-empty" class="h-full flex flex-col items-center justify-center text-slate-400 text-xs">
+            Nessun risultato da mostrare
+          </div>
+          <div id="sql-error" class="hidden p-4 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 font-mono text-xs whitespace-pre-wrap"></div>
+          <table id="sql-table" class="w-full text-left border-collapse text-xs hidden">
+            <thead class="bg-slate-100 dark:bg-slate-900 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+              <tr id="sql-table-headers"></tr>
+            </thead>
+            <tbody id="sql-table-body" class="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-950"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 3: SCHEMA & DDL INFO -->
+      <section id="view-info" class="flex-1 overflow-auto p-6 hidden">
+        <div class="max-w-4xl mx-auto space-y-6">
+          <div>
+            <h2 class="text-base font-semibold mb-1">Informazioni Database & Schema DDL</h2>
+            <p class="text-xs text-slate-400">Dettagli delle definizioni CREATE TABLE generate da SQLite.</p>
+          </div>
+          <div id="ddl-container" class="space-y-4">
+            <!-- Dynamically injected DDL blocks -->
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL: ADD / EDIT RECORD -->
+  <div id="modal-record" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <h3 id="modal-record-title" class="text-sm font-semibold">Modifica Record</h3>
+        <button id="btn-close-modal-record" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div id="modal-record-fields" class="p-4 overflow-y-auto space-y-3 flex-1 text-xs">
+        <!-- Injected dynamic fields -->
+      </div>
+      <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 flex items-center justify-end gap-2">
+        <button id="btn-cancel-record" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">Annulla</button>
+        <button id="btn-save-record" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow">Salva</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CREATE TABLE -->
+  <div id="modal-new-table" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <h3 class="text-sm font-semibold">Crea Nuova Tabella</h3>
+        <button id="btn-close-modal-new-table" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div class="p-4 space-y-4 overflow-y-auto flex-1 text-xs">
+        <div>
+          <label class="block text-slate-500 dark:text-slate-400 mb-1">Nome Tabella</label>
+          <input type="text" id="new-table-name" placeholder="es. prodotti" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-slate-500 dark:text-slate-400">Colonne</span>
+            <button id="btn-add-col-field" class="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+              <i data-lucide="plus" class="w-3 h-3"></i> Aggiungi Colonna
+            </button>
+          </div>
+          <div id="new-table-cols-list" class="space-y-2">
+            <!-- Row for ID PK column by default -->
+            <div class="col-definition-row flex items-center gap-2">
+              <input type="text" value="id" placeholder="Nome colonna" class="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 outline-none">
+              <select class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 outline-none">
+                <option value="INTEGER PRIMARY KEY AUTOINCREMENT">INTEGER (PK AUTO)</option>
+                <option value="TEXT">TEXT</option>
+                <option value="INTEGER">INTEGER</option>
+                <option value="REAL">REAL</option>
+                <option value="BLOB">BLOB</option>
+              </select>
+              <button class="btn-remove-col p-1 text-slate-400 hover:text-rose-500 opacity-30 cursor-not-allowed" disabled>
+                <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+            <!-- Second default column -->
+            <div class="col-definition-row flex items-center gap-2">
+              <input type="text" value="nome" placeholder="Nome colonna" class="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 outline-none">
+              <select class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 outline-none">
+                <option value="TEXT">TEXT</option>
+                <option value="INTEGER">INTEGER</option>
+                <option value="REAL">REAL</option>
+                <option value="BLOB">BLOB</option>
+              </select>
+              <button class="btn-remove-col p-1 text-slate-400 hover:text-rose-500">
+                <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 flex items-center justify-end gap-2">
+        <button id="btn-cancel-new-table" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">Annulla</button>
+        <button id="btn-create-table-submit" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow">Crea Tabella</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIRM DIALOG -->
+  <div id="modal-confirm" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-sm p-4">
+      <div class="flex items-center gap-3 mb-3 text-rose-500">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+        <h3 id="modal-confirm-title" class="font-semibold text-sm text-slate-900 dark:text-slate-100">Conferma Operazione</h3>
+      </div>
+      <p id="modal-confirm-msg" class="text-xs text-slate-500 dark:text-slate-400 mb-4"></p>
+      <div class="flex justify-end gap-2">
+        <button id="btn-confirm-cancel" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300">Annulla</button>
+        <button id="btn-confirm-ok" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-600 hover:bg-rose-500 text-white">Elimina</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- APPLICATION LOGIC SCRIPT -->
+  <script>
+    // State
+    let SQL = null;
+    let db = null;
+    let currentFileName = "database.db";
+    let currentTable = null;
+    let tableColumns = [];
+    let primaryKeyColumn = null;
+    let currentPage = 1;
+    let pageSize = 25;
+    let totalRecords = 0;
+    let searchQuery = "";
+    let sqlHistory = [];
+
+    // DOM Elements
+    const fileInput = document.getElementById('file-input');
+    const btnUpload = document.getElementById('btn-upload');
+    const btnNewDb = document.getElementById('btn-new-db');
+    const btnDemoDb = document.getElementById('btn-demo-db');
+    const btnExportDb = document.getElementById('btn-export-db');
+    const btnTheme = document.getElementById('btn-theme');
+    const dbBadge = document.getElementById('db-badge');
+    const dbMeta = document.getElementById('db-meta');
+    const tablesList = document.getElementById('tables-list');
+    const filterTables = document.getElementById('filter-tables');
+    const tablesCount = document.getElementById('tables-count');
+    const btnRefreshSchema = document.getElementById('btn-refresh-schema');
+
+    // Tabs
+    const tabBtnExplorer = document.getElementById('tab-btn-explorer');
+    const tabBtnSql = document.getElementById('tab-btn-sql');
+    const tabBtnInfo = document.getElementById('tab-btn-info');
+    const viewExplorer = document.getElementById('view-explorer');
+    const viewSql = document.getElementById('view-sql');
+    const viewInfo = document.getElementById('view-info');
+
+    // Explorer components
+    const currentTableLabel = document.getElementById('current-table-label');
+    const tableSearchInput = document.getElementById('table-search-input');
+    const btnAddRecord = document.getElementById('btn-add-record');
+    const btnExportCsv = document.getElementById('btn-export-csv');
+    const btnExportJson = document.getElementById('btn-export-json');
+    const btnDropTable = document.getElementById('btn-drop-table');
+    const dataTable = document.getElementById('data-table');
+    const tableHeaders = document.getElementById('table-headers');
+    const tableBody = document.getElementById('table-body');
+    const gridEmpty = document.getElementById('grid-empty');
+    const pageSizeSelect = document.getElementById('page-size-select');
+    const paginationStats = document.getElementById('pagination-stats');
+    const pageCurrentDisplay = document.getElementById('page-current-display');
+    const btnPagePrev = document.getElementById('btn-page-prev');
+    const btnPageNext = document.getElementById('btn-page-next');
+
+    // SQL Console components
+    const sqlInput = document.getElementById('sql-input');
+    const btnRunSql = document.getElementById('btn-run-sql');
+    const btnClearSql = document.getElementById('btn-clear-sql');
+    const sqlStatusBar = document.getElementById('sql-status-bar');
+    const sqlHistorySelect = document.getElementById('sql-history-select');
+    const sqlOutputContainer = document.getElementById('sql-output-container');
+    const sqlTable = document.getElementById('sql-table');
+    const sqlTableHeaders = document.getElementById('sql-table-headers');
+    const sqlTableBody = document.getElementById('sql-table-body');
+    const sqlEmpty = document.getElementById('sql-empty');
+    const sqlError = document.getElementById('sql-error');
+
+    // Schema Info View
+    const ddlContainer = document.getElementById('ddl-container');
+
+    // Modals
+    const modalRecord = document.getElementById('modal-record');
+    const modalRecordTitle = document.getElementById('modal-record-title');
+    const modalRecordFields = document.getElementById('modal-record-fields');
+    const btnCloseModalRecord = document.getElementById('btn-close-modal-record');
+    const btnCancelRecord = document.getElementById('btn-cancel-record');
+    const btnSaveRecord = document.getElementById('btn-save-record');
+    let recordModalMode = 'add'; // 'add' or 'edit'
+    let editingRowIdentifier = null; // { col, value }
+
+    // New Table Modal
+    const modalNewTable = document.getElementById('modal-new-table');
+    const btnNewTable = document.getElementById('btn-new-table');
+    const btnCloseModalNewTable = document.getElementById('btn-close-modal-new-table');
+    const btnCancelNewTable = document.getElementById('btn-cancel-new-table');
+    const btnCreateTableSubmit = document.getElementById('btn-create-table-submit');
+    const btnAddColField = document.getElementById('btn-add-col-field');
+    const newTableColsList = document.getElementById('new-table-cols-list');
+    const newTableNameInput = document.getElementById('new-table-name');
+
+    // Confirm Modal
+    const modalConfirm = document.getElementById('modal-confirm');
+    const modalConfirmTitle = document.getElementById('modal-confirm-title');
+    const modalConfirmMsg = document.getElementById('modal-confirm-msg');
+    const btnConfirmCancel = document.getElementById('btn-confirm-cancel');
+    const btnConfirmOk = document.getElementById('btn-confirm-ok');
+    let confirmCallback = null;
+
+    // Toast function
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-600 text-white',
+        error: 'bg-rose-600 text-white',
+        info: 'bg-slate-800 text-white border border-slate-700'
+      };
+      toast.className = `px-4 py-2 rounded-lg text-xs font-medium shadow-lg pointer-events-auto transition-all transform duration-300 opacity-0 translate-y-2 flex items-center gap-2 ${colors[type] || colors.info}`;
+      
+      const icon = type === 'success' ? 'check-circle' : (type === 'error' ? 'alert-circle' : 'info');
+      toast.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i><span>${message}</span>`;
+      
+      document.getElementById('toast-container').appendChild(toast);
+      lucide.createIcons();
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('opacity-0', 'translate-y-2');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Confirmation Helper
+    function openConfirm(title, message, onConfirm) {
+      modalConfirmTitle.textContent = title;
+      modalConfirmMsg.textContent = message;
+      confirmCallback = onConfirm;
+      modalConfirm.classList.remove('hidden');
+    }
+    btnConfirmCancel.addEventListener('click', () => {
+      modalConfirm.classList.add('hidden');
+      confirmCallback = null;
+    });
+    btnConfirmOk.addEventListener('click', () => {
+      if (confirmCallback) confirmCallback();
+      modalConfirm.classList.add('hidden');
+    });
+
+    // Theme toggler
+    btnTheme.addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+    });
+
+    // Initialize SQL.js
+    async function initSql() {
+      try {
+        SQL = await initSqlJs({
+          locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
+        });
+        showToast("Motore SQLite WASM pronto!", "success");
+        loadDemoDatabase();
+      } catch (err) {
+        console.error(err);
+        showToast("Errore inizializzazione WebAssembly: " + err.message, "error");
+      }
+    }
+
+    // Tab Switching
+    function setTab(tab) {
+      [tabBtnExplorer, tabBtnSql, tabBtnInfo].forEach(btn => {
+        btn.classList.remove('border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400');
+        btn.classList.add('border-transparent', 'text-slate-500');
+      });
+      [viewExplorer, viewSql, viewInfo].forEach(v => v.classList.add('hidden'));
+
+      if (tab === 'explorer') {
+        tabBtnExplorer.classList.add('border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400');
+        tabBtnExplorer.classList.remove('border-transparent', 'text-slate-500');
+        viewExplorer.classList.remove('hidden');
+      } else if (tab === 'sql') {
+        tabBtnSql.classList.add('border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400');
+        tabBtnSql.classList.remove('border-transparent', 'text-slate-500');
+        viewSql.classList.remove('hidden');
+      } else if (tab === 'info') {
+        tabBtnInfo.classList.add('border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400');
+        tabBtnInfo.classList.remove('border-transparent', 'text-slate-500');
+        viewInfo.classList.remove('hidden');
+        renderDdlView();
+      }
+    }
+
+    tabBtnExplorer.addEventListener('click', () => setTab('explorer'));
+    tabBtnSql.addEventListener('click', () => setTab('sql'));
+    tabBtnInfo.addEventListener('click', () => setTab('info'));
+
+    // CREATE EMPTY DATABASE
+    function createEmptyDatabase() {
+      if (!SQL) return;
+      db = new SQL.Database();
+      currentFileName = "nuovo_database.db";
+      currentTable = null;
+      updateDbHeader();
+      refreshSchema();
+      showToast("Nuovo database SQLite creato in memoria.", "info");
+    }
+
+    // CREATE DEMO DATABASE
+    function loadDemoDatabase() {
+      if (!SQL) return;
+      db = new SQL.Database();
+      currentFileName = "ecommerce_demo.db";
+
+      // Execute sample schema and data
+      db.run(`
+        CREATE TABLE categorie (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome TEXT NOT NULL,
+          descrizione TEXT
+        );
+
+        INSERT INTO categorie (nome, descrizione) VALUES 
+        ('Elettronica', 'Dispositivi smartphone, PC e accessori'),
+        ('Abbigliamento', 'Vestiti, scarpe e moda'),
+        ('Casa e Cucina', 'Arredamento, elettrodomestici ed utensili');
+
+        CREATE TABLE prodotti (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          categoria_id INTEGER,
+          codice TEXT UNIQUE,
+          nome TEXT NOT NULL,
+          prezzo REAL NOT NULL,
+          quantita INTEGER DEFAULT 0,
+          disponibile INTEGER DEFAULT 1,
+          creato_il TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (categoria_id) REFERENCES categorie(id)
+        );
+
+        INSERT INTO prodotti (categoria_id, codice, nome, prezzo, quantita, disponibile) VALUES
+        (1, 'ELEC-001', 'Smartphone Pro Max 256GB', 1099.99, 45, 1),
+        (1, 'ELEC-002', 'Cuffie Bluetooth Noise Cancelling', 189.50, 120, 1),
+        (1, 'ELEC-003', 'Tastiera Meccanica RGB', 89.90, 15, 1),
+        (2, 'CLOTH-001', 'T-shirt Cotone Organico', 24.90, 200, 1),
+        (2, 'CLOTH-002', 'Giacca a vento Impermeabile', 119.00, 30, 1),
+        (3, 'HOME-001', 'Macchina Caffè Espresso Automatica', 349.00, 18, 1),
+        (3, 'HOME-002', 'Set Coltelli Chef Giapponesi', 85.00, 40, 1);
+
+        CREATE TABLE clienti (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome TEXT NOT NULL,
+          cognome TEXT NOT NULL,
+          email TEXT UNIQUE,
+          citta TEXT,
+          saldo REAL DEFAULT 0.0
+        );
+
+        INSERT INTO clienti (nome, cognome, email, citta, saldo) VALUES
+        ('Mario', 'Rossi', 'mario.rossi@example.com', 'Roma', 150.00),
+        ('Giulia', 'Bianchi', 'giulia.b@example.com', 'Milano', 320.50),
+        ('Luca', 'Verdi', 'luca.verdi@example.com', 'Napoli', 0.0),
+        ('Elena', 'Neri', 'elena.neri@example.com', 'Torino', 45.90);
+      `);
+
+      updateDbHeader();
+      refreshSchema();
+      selectTable('prodotti');
+      showToast("Database demo caricato!", "success");
+    }
+
+    function updateDbHeader() {
+      dbBadge.textContent = currentFileName;
+      dbBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20";
+      
+      let tablesNum = 0;
+      try {
+        const res = db.exec("SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+        if (res.length > 0 && res[0].values.length > 0) {
+          tablesNum = res[0].values[0][0];
+        }
+      } catch (e) {}
+      dbMeta.textContent = `${tablesNum} tabelle | Modificabile in tempo reale`;
+    }
+
+    // Refresh Schema / Sidebar List
+    function refreshSchema() {
+      if (!db) {
+        tablesList.innerHTML = `<div class="text-center py-10 px-4 text-xs text-slate-400">Nessun database aperto.</div>`;
+        tablesCount.textContent = "0 Tabelle";
+        return;
+      }
+
+      try {
+        const tablesQuery = db.exec(`
+          SELECT name, type 
+          FROM sqlite_master 
+          WHERE (type='table' OR type='view') AND name NOT LIKE 'sqlite_%'
+          ORDER BY name ASC
+        `);
+
+        tablesList.innerHTML = '';
+
+        if (!tablesQuery.length || !tablesQuery[0].values.length) {
+          tablesList.innerHTML = `<div class="text-center py-10 px-4 text-xs text-slate-400">Nessuna tabella presente. Crea la prima!</div>`;
+          tablesCount.textContent = "0 Tabelle";
+          return;
+        }
+
+        const items = tablesQuery[0].values;
+        tablesCount.textContent = `${items.length} ${items.length === 1 ? 'Tabella' : 'Tabelle'}`;
+
+        items.forEach(([name, type]) => {
+          // get row count
+          let rowCount = 0;
+          try {
+            const countRes = db.exec(`SELECT COUNT(*) FROM "${name}"`);
+            if (countRes.length && countRes[0].values.length) {
+              rowCount = countRes[0].values[0][0];
+            }
+          } catch(e) {}
+
+          const isCurrent = currentTable === name;
+          const div = document.createElement('div');
+          div.className = `table-item flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition ${
+            isCurrent 
+              ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-medium' 
+              : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+          }`;
+          div.dataset.tableName = name;
+
+          div.innerHTML = `
+            <div class="flex items-center gap-2 truncate">
+              <i data-lucide="${type === 'view' ? 'eye' : 'table'}" class="w-4 h-4 shrink-0 ${isCurrent ? 'text-indigo-500' : 'text-slate-400'}"></i>
+              <span class="truncate">${name}</span>
+            </div>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 font-mono">${rowCount}</span>
+          `;
+
+          div.addEventListener('click', () => selectTable(name));
+          tablesList.appendChild(div);
+        });
+
+        lucide.createIcons();
+      } catch (err) {
+        console.error(err);
+        showToast("Errore lettura schema: " + err.message, "error");
+      }
+    }
+
+    // Filter sidebar tables
+    filterTables.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      const items = tablesList.querySelectorAll('.table-item');
+      items.forEach(el => {
+        const name = el.dataset.tableName.toLowerCase();
+        el.style.display = name.includes(q) ? 'flex' : 'none';
+      });
+    });
+
+    // Select Table
+    function selectTable(name) {
+      currentTable = name;
+      currentPage = 1;
+      searchQuery = "";
+      tableSearchInput.value = "";
+      refreshSchema();
+      inspectTableStructure();
+      renderTableData();
+      setTab('explorer');
+    }
+
+    // Inspect Table Columns
+    function inspectTableStructure() {
+      if (!db || !currentTable) return;
+      try {
+        const info = db.exec(`PRAGMA table_info("${currentTable}")`);
+        tableColumns = [];
+        primaryKeyColumn = null;
+
+        if (info.length && info[0].values.length) {
+          info[0].values.forEach(row => {
+            const col = {
+              cid: row[0],
+              name: row[1],
+              type: row[2] || 'ANY',
+              notnull: row[3] === 1,
+              dflt_value: row[4],
+              pk: row[5] > 0
+            };
+            tableColumns.push(col);
+            if (col.pk && !primaryKeyColumn) {
+              primaryKeyColumn = col.name;
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Errore schema tabella:", err);
+      }
+    }
+
+    // Render Table Data (Grid + Pagination)
+    function renderTableData() {
+      if (!db || !currentTable) {
+        currentTableLabel.textContent = "Tabella: -";
+        gridEmpty.classList.remove('hidden');
+        dataTable.classList.add('hidden');
+        return;
+      }
+
+      currentTableLabel.textContent = `Tabella: ${currentTable}`;
+      gridEmpty.classList.add('hidden');
+      dataTable.classList.remove('hidden');
+
+      // Calculate total rows with search filter
+      let countSql = `SELECT COUNT(*) FROM "${currentTable}"`;
+      let whereClause = "";
+      if (searchQuery.trim() !== "" && tableColumns.length > 0) {
+        const searchConds = tableColumns.map(c => `CAST("${c.name}" AS TEXT) LIKE '%${searchQuery.replace(/'/g, "''")}%'`);
+        whereClause = ` WHERE ${searchConds.join(' OR ')}`;
+        countSql += whereClause;
+      }
+
+      try {
+        const countRes = db.exec(countSql);
+        totalRecords = countRes.length ? countRes[0].values[0][0] : 0;
+      } catch (e) {
+        totalRecords = 0;
+      }
+
+      const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+      if (currentPage > totalPages) currentPage = totalPages;
+
+      const offset = (currentPage - 1) * pageSize;
+
+      // Select records
+      const selectSql = `SELECT rowid, * FROM "${currentTable}" ${whereClause} LIMIT ${pageSize} OFFSET ${offset}`;
+      
+      let rows = [];
+      try {
+        const queryRes = db.exec(selectSql);
+        if (queryRes.length) {
+          rows = queryRes[0].values;
+        }
+      } catch (err) {
+        showToast("Errore recupero dati: " + err.message, "error");
+      }
+
+      // Build Table Headers
+      tableHeaders.innerHTML = `
+        <th class="p-2.5 w-12 font-semibold text-slate-500 uppercase tracking-wider text-center">#</th>
+        <th class="p-2.5 w-20 font-semibold text-slate-500 uppercase tracking-wider text-center">Azioni</th>
+      `;
+
+      tableColumns.forEach(c => {
+        const th = document.createElement('th');
+        th.className = "p-2.5 font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider whitespace-nowrap";
+        th.innerHTML = `
+          <div class="flex items-center gap-1.5">
+            <span>${c.name}</span>
+            <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-500">${c.type}</span>
+            ${c.pk ? '<i data-lucide="key" class="w-3 h-3 text-amber-500 inline"></i>' : ''}
+          </div>
+        `;
+        tableHeaders.appendChild(th);
+      });
+
+      // Build Table Body
+      tableBody.innerHTML = '';
+      if (rows.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="${tableColumns.length + 2}" class="p-8 text-center text-slate-400">Nessun dato presente in questa tabella.</td>`;
+        tableBody.appendChild(tr);
+      } else {
+        rows.forEach((row, rowIndex) => {
+          const rowid = row[0]; // first column is rowid
+          const recordValues = row.slice(1);
+
+          const tr = document.createElement('tr');
+          tr.className = "hover:bg-indigo-50/40 dark:hover:bg-slate-900/60 transition group";
+
+          // Row index
+          let tdHtml = `
+            <td class="p-2 text-center text-slate-400 font-mono text-[11px]">${offset + rowIndex + 1}</td>
+            <td class="p-2 text-center whitespace-nowrap">
+              <button class="btn-edit-row p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition" title="Modifica riga">
+                <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+              </button>
+              <button class="btn-delete-row p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition" title="Elimina riga">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </td>
+          `;
+
+          recordValues.forEach((val, colIdx) => {
+            const col = tableColumns[colIdx];
+            const isNull = val === null || val === undefined;
+            const displayVal = isNull ? '<span class="text-slate-400 italic font-mono text-[10px]">NULL</span>' : escapeHtml(String(val));
+            tdHtml += `
+              <td class="p-2.5 font-mono text-[11px] whitespace-nowrap max-w-xs truncate cell-value" 
+                  data-col="${col.name}" 
+                  data-rowid="${rowid}"
+                  title="${isNull ? 'NULL' : escapeHtml(String(val))}">
+                ${displayVal}
+              </td>
+            `;
+          });
+
+          tr.innerHTML = tdHtml;
+
+          // Action: Edit record
+          tr.querySelector('.btn-edit-row').addEventListener('click', () => {
+            openEditRecordModal(recordValues, rowid);
+          });
+
+          // Action: Delete record
+          tr.querySelector('.btn-delete-row').addEventListener('click', () => {
+            openConfirm("Elimina record", `Vuoi eliminare definitivamente questa riga?`, () => {
+              deleteRow(rowid);
+            });
+          });
+
+          tableBody.appendChild(tr);
+        });
+      }
+
+      // Update Pagination Display
+      const startItem = totalRecords === 0 ? 0 : offset + 1;
+      const endItem = Math.min(offset + pageSize, totalRecords);
+      paginationStats.textContent = `Mostrando ${startItem} - ${endItem} di ${totalRecords}`;
+      pageCurrentDisplay.textContent = `Pagina ${currentPage} di ${totalPages}`;
+      btnPagePrev.disabled = currentPage <= 1;
+      btnPageNext.disabled = currentPage >= totalPages;
+
+      lucide.createIcons();
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Table search handling
+    let searchDebounce = null;
+    tableSearchInput.addEventListener('input', (e) => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        searchQuery = e.target.value;
+        currentPage = 1;
+        renderTableData();
+      }, 250);
+    });
+
+    // Pagination Event Listeners
+    pageSizeSelect.addEventListener('change', (e) => {
+      pageSize = parseInt(e.target.value, 10);
+      currentPage = 1;
+      renderTableData();
+    });
+
+    btnPagePrev.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderTableData();
+      }
+    });
+
+    btnPageNext.addEventListener('click', () => {
+      const totalPages = Math.ceil(totalRecords / pageSize);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderTableData();
+      }
+    });
+
+    // RECORD MODAL: ADD / EDIT
+    function openAddRecordModal() {
+      if (!currentTable || !tableColumns.length) return;
+      recordModalMode = 'add';
+      modalRecordTitle.textContent = `Aggiungi Record in "${currentTable}"`;
+      modalRecordFields.innerHTML = '';
+
+      tableColumns.forEach(col => {
+        const isAutoInc = col.pk && col.type.toUpperCase().includes('INT');
+        const fieldGroup = document.createElement('div');
+        fieldGroup.className = "flex flex-col gap-1";
+        fieldGroup.innerHTML = `
+          <div class="flex items-center justify-between">
+            <label class="font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              ${col.name}
+              <span class="text-[10px] text-slate-400">(${col.type})</span>
+            </label>
+            ${isAutoInc ? '<span class="text-[10px] text-indigo-500">Auto Increment</span>' : ''}
+          </div>
+          <input type="text" data-column="${col.name}" class="modal-input bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="${isAutoInc ? 'Generato automaticamente' : 'Valore o NULL'}" ${isAutoInc ? 'disabled' : ''}>
+        `;
+        modalRecordFields.appendChild(fieldGroup);
+      });
+
+      modalRecord.classList.remove('hidden');
+    }
+
+    function openEditRecordModal(values, rowid) {
+      recordModalMode = 'edit';
+      editingRowIdentifier = rowid;
+      modalRecordTitle.textContent = `Modifica Record in "${currentTable}"`;
+      modalRecordFields.innerHTML = '';
+
+      tableColumns.forEach((col, idx) => {
+        const val = values[idx];
+        const fieldGroup = document.createElement('div');
+        fieldGroup.className = "flex flex-col gap-1";
+        fieldGroup.innerHTML = `
+          <div class="flex items-center justify-between">
+            <label class="font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              ${col.name}
+              <span class="text-[10px] text-slate-400">(${col.type})</span>
+              ${col.pk ? '<i data-lucide="key" class="w-3 h-3 text-amber-500 inline"></i>' : ''}
+            </label>
+            <label class="text-[11px] text-slate-400 flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" class="set-null-checkbox rounded" ${val === null ? 'checked' : ''}> Imposta NULL
+            </label>
+          </div>
+          <input type="text" data-column="${col.name}" value="${val === null ? '' : escapeHtml(String(val))}" class="modal-input bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500 font-mono" ${val === null ? 'disabled' : ''}>
+        `;
+
+        const nullCheckbox = fieldGroup.querySelector('.set-null-checkbox');
+        const inputField = fieldGroup.querySelector('.modal-input');
+        nullCheckbox.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            inputField.value = '';
+            inputField.disabled = true;
+          } else {
+            inputField.disabled = false;
+          }
+        });
+
+        modalRecordFields.appendChild(fieldGroup);
+      });
+
+      lucide.createIcons();
+      modalRecord.classList.remove('hidden');
+    }
+
+    btnCloseModalRecord.addEventListener('click', () => modalRecord.classList.add('hidden'));
+    btnCancelRecord.addEventListener('click', () => modalRecord.classList.add('hidden'));
+    btnAddRecord.addEventListener('click', openAddRecordModal);
+
+    btnSaveRecord.addEventListener('click', () => {
+      try {
+        const inputs = modalRecordFields.querySelectorAll('.modal-input');
+        
+        if (recordModalMode === 'add') {
+          const colsToInsert = [];
+          const valuesToInsert = [];
+          const placeholders = [];
+
+          inputs.forEach(input => {
+            if (input.disabled && !input.value) return; // skip autoinc PK
+            const colName = input.dataset.column;
+            const val = input.value.trim();
+
+            colsToInsert.push(`"${colName}"`);
+            if (val === '') {
+              valuesToInsert.push(null);
+            } else {
+              valuesToInsert.push(val);
+            }
+            placeholders.push('?');
+          });
+
+          if (colsToInsert.length === 0) {
+            db.run(`INSERT INTO "${currentTable}" DEFAULT VALUES`);
+          } else {
+            const sql = `INSERT INTO "${currentTable}" (${colsToInsert.join(',')}) VALUES (${placeholders.join(',')})`;
+            db.run(sql, valuesToInsert);
+          }
+
+          showToast("Nuovo record inserito!", "success");
+        } else {
+          // Edit mode
+          const setClauses = [];
+          const values = [];
+
+          inputs.forEach(input => {
+            const colName = input.dataset.column;
+            setClauses.push(`"${colName}" = ?`);
+            if (input.disabled || input.value.trim() === '') {
+              values.push(null);
+            } else {
+              values.push(input.value);
+            }
+          });
+
+          values.push(editingRowIdentifier);
+          const sql = `UPDATE "${currentTable}" SET ${setClauses.join(', ')} WHERE rowid = ?`;
+          db.run(sql, values);
+          showToast("Record aggiornato con successo!", "success");
+        }
+
+        modalRecord.classList.add('hidden');
+        renderTableData();
+        refreshSchema();
+      } catch (err) {
+        showToast("Errore salvataggio: " + err.message, "error");
+      }
+    });
+
+    // Delete Row
+    function deleteRow(rowid) {
+      try {
+        db.run(`DELETE FROM "${currentTable}" WHERE rowid = ?`, [rowid]);
+        showToast("Record eliminato.", "info");
+        renderTableData();
+        refreshSchema();
+      } catch (err) {
+        showToast("Errore eliminazione: " + err.message, "error");
+      }
+    }
+
+    // Drop Table
+    btnDropTable.addEventListener('click', () => {
+      if (!currentTable) return;
+      openConfirm("Elimina Tabella", `Sei sicuro di voler eliminare la tabella "${currentTable}" e tutti i suoi dati?`, () => {
+        try {
+          db.run(`DROP TABLE "${currentTable}"`);
+          showToast(`Tabella "${currentTable}" eliminata.`, "info");
+          currentTable = null;
+          refreshSchema();
+          renderTableData();
+        } catch (err) {
+          showToast("Errore DROP TABLE: " + err.message, "error");
+        }
+      });
+    });
+
+    // Export Table to CSV
+    btnExportCsv.addEventListener('click', () => {
+      if (!db || !currentTable) return;
+      try {
+        const res = db.exec(`SELECT * FROM "${currentTable}"`);
+        if (!res.length) {
+          showToast("Nessun dato da esportare.", "info");
+          return;
+        }
+
+        const cols = res[0].columns;
+        const rows = res[0].values;
+
+        let csv = cols.map(c => `"${c.replace(/"/g, '""')}"`).join(',') + '\n';
+        rows.forEach(r => {
+          const line = r.map(val => {
+            if (val === null || val === undefined) return '""';
+            return `"${String(val).replace(/"/g, '""')}"`;
+          }).join(',');
+          csv += line + '\n';
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        downloadBlob(blob, `${currentTable}.csv`);
+        showToast(`Tabella esportata in CSV`, "success");
+      } catch (err) {
+        showToast("Errore esportazione CSV: " + err.message, "error");
+      }
+    });
+
+    // Export Table to JSON
+    btnExportJson.addEventListener('click', () => {
+      if (!db || !currentTable) return;
+      try {
+        const res = db.exec(`SELECT * FROM "${currentTable}"`);
+        if (!res.length) {
+          showToast("Nessun dato da esportare.", "info");
+          return;
+        }
+
+        const cols = res[0].columns;
+        const rows = res[0].values;
+
+        const objects = rows.map(r => {
+          const obj = {};
+          cols.forEach((col, idx) => {
+            obj[col] = r[idx];
+          });
+          return obj;
+        });
+
+        const jsonStr = JSON.stringify(objects, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        downloadBlob(blob, `${currentTable}.json`);
+        showToast(`Tabella esportata in JSON`, "success");
+      } catch (err) {
+        showToast("Errore esportazione JSON: " + err.message, "error");
+      }
+    });
+
+    // CREATE TABLE MODAL HANDLERS
+    btnNewTable.addEventListener('click', () => {
+      newTableNameInput.value = '';
+      modalNewTable.classList.remove('hidden');
+    });
+    btnCloseModalNewTable.addEventListener('click', () => modalNewTable.classList.add('hidden'));
+    btnCancelNewTable.addEventListener('click', () => modalNewTable.classList.add('hidden'));
+
+    btnAddColField.addEventListener('click', () => {
+      const row = document.createElement('div');
+      row.className = "col-definition-row flex items-center gap-2";
+      row.innerHTML = `
+        <input type="text" placeholder="Nome colonna" class="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 outline-none">
+        <select class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 outline-none">
+          <option value="TEXT">TEXT</option>
+          <option value="INTEGER">INTEGER</option>
+          <option value="REAL">REAL</option>
+          <option value="BLOB">BLOB</option>
+        </select>
+        <button class="btn-remove-col p-1 text-slate-400 hover:text-rose-500">
+          <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+        </button>
+      `;
+      row.querySelector('.btn-remove-col').addEventListener('click', () => row.remove());
+      newTableColsList.appendChild(row);
+      lucide.createIcons();
+    });
+
+    // Attach listener to initial remove buttons
+    document.querySelectorAll('.btn-remove-col').forEach(btn => {
+      if (!btn.disabled) {
+        btn.addEventListener('click', (e) => e.target.closest('.col-definition-row').remove());
+      }
+    });
+
+    btnCreateTableSubmit.addEventListener('click', () => {
+      const tableName = newTableNameInput.value.trim();
+      if (!tableName) {
+        showToast("Inserisci un nome per la tabella", "error");
+        return;
+      }
+
+      const rows = newTableColsList.querySelectorAll('.col-definition-row');
+      const colsDefs = [];
+
+      rows.forEach(r => {
+        const nameInput = r.querySelector('input');
+        const typeSelect = r.querySelector('select');
+        const colName = nameInput.value.trim();
+        const colType = typeSelect.value;
+        if (colName) {
+          colsDefs.push(`"${colName}" ${colType}`);
+        }
+      });
+
+      if (colsDefs.length === 0) {
+        showToast("Specifica almeno una colonna", "error");
+        return;
+      }
+
+      const sql = `CREATE TABLE "${tableName}" (\n  ${colsDefs.join(',\n  ')}\n);`;
+
+      try {
+        db.run(sql);
+        showToast(`Tabella "${tableName}" creata!`, "success");
+        modalNewTable.classList.add('hidden');
+        refreshSchema();
+        selectTable(tableName);
+      } catch (err) {
+        showToast("Errore creazione tabella: " + err.message, "error");
+      }
+    });
+
+    // SQL CONSOLE EXECUTION
+    function executeSqlQuery() {
+      const query = sqlInput.value.trim();
+      if (!query || !db) return;
+
+      const startTime = performance.now();
+      sqlError.classList.add('hidden');
+      sqlTable.classList.add('hidden');
+      sqlEmpty.classList.add('hidden');
+
+      try {
+        const results = db.exec(query);
+        const execTime = (performance.now() - startTime).toFixed(1);
+
+        // Record history
+        if (!sqlHistory.includes(query)) {
+          sqlHistory.unshift(query);
+          if (sqlHistory.length > 25) sqlHistory.pop();
+          updateSqlHistoryDropdown();
+        }
+
+        // Schema might have changed (CREATE, DROP, INSERT, etc.)
+        refreshSchema();
+        if (currentTable) {
+          renderTableData();
+        }
+
+        if (results.length === 0) {
+          sqlStatusBar.textContent = `Query eseguita con successo in ${execTime} ms (Nessun dato restituito)`;
+          sqlEmpty.textContent = "Query eseguita con successo. Nessun record da mostrare.";
+          sqlEmpty.classList.remove('hidden');
+          showToast("Query eseguita con successo!", "success");
+          return;
+        }
+
+        const firstResult = results[0];
+        sqlStatusBar.textContent = `${firstResult.values.length} righe restituite in ${execTime} ms`;
+
+        // Render SQL results table
+        sqlTableHeaders.innerHTML = '';
+        firstResult.columns.forEach(col => {
+          const th = document.createElement('th');
+          th.className = "p-2 font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider whitespace-nowrap";
+          th.textContent = col;
+          sqlTableHeaders.appendChild(th);
+        });
+
+        sqlTableBody.innerHTML = '';
+        firstResult.values.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.className = "hover:bg-slate-100/50 dark:hover:bg-slate-900/40";
+          row.forEach(val => {
+            const td = document.createElement('td');
+            td.className = "p-2 font-mono text-xs whitespace-nowrap max-w-sm truncate border-b border-slate-200 dark:border-slate-800";
+            td.innerHTML = val === null ? '<span class="text-slate-400 italic">NULL</span>' : escapeHtml(String(val));
+            tr.appendChild(td);
+          });
+          sqlTableBody.appendChild(tr);
+        });
+
+        sqlTable.classList.remove('hidden');
+      } catch (err) {
+        sqlError.textContent = `Errore SQL:\n${err.message}`;
+        sqlError.classList.remove('hidden');
+        sqlStatusBar.textContent = `Errore nell'esecuzione`;
+      }
+    }
+
+    btnRunSql.addEventListener('click', executeSqlQuery);
+    btnClearSql.addEventListener('click', () => {
+      sqlInput.value = '';
+      sqlInput.focus();
+    });
+
+    sqlInput.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        executeSqlQuery();
+      }
+    });
+
+    function updateSqlHistoryDropdown() {
+      sqlHistorySelect.innerHTML = `<option value="">-- Cronologia Query (${sqlHistory.length}) --</option>`;
+      sqlHistory.forEach(q => {
+        const opt = document.createElement('option');
+        opt.value = q;
+        opt.textContent = q.replace(/\s+/g, ' ').substring(0, 50) + (q.length > 50 ? '...' : '');
+        sqlHistorySelect.appendChild(opt);
+      });
+    }
+
+    sqlHistorySelect.addEventListener('change', (e) => {
+      if (e.target.value) {
+        sqlInput.value = e.target.value;
+      }
+    });
+
+    // RENDER DDL SCHEMA VIEW
+    function renderDdlView() {
+      if (!db) {
+        ddlContainer.innerHTML = `<p class="text-xs text-slate-400">Nessun database aperto.</p>`;
+        return;
+      }
+
+      try {
+        const res = db.exec(`SELECT name, type, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type, name`);
+        if (!res.length || !res[0].values.length) {
+          ddlContainer.innerHTML = `<p class="text-xs text-slate-400">Nessuna definizione trovata.</p>`;
+          return;
+        }
+
+        ddlContainer.innerHTML = '';
+        res[0].values.forEach(([name, type, sql]) => {
+          const card = document.createElement('div');
+          card.className = "border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 overflow-hidden shadow-sm";
+          card.innerHTML = `
+            <div class="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <span class="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                <i data-lucide="${type === 'view' ? 'eye' : 'table'}" class="w-3.5 h-3.5"></i>
+                ${name} (${type.toUpperCase()})
+              </span>
+              <button class="btn-copy-ddl text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center gap-1">
+                <i data-lucide="copy" class="w-3 h-3"></i> Copia DDL
+              </button>
+            </div>
+            <pre class="p-4 text-xs font-mono overflow-x-auto text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/50 whitespace-pre-wrap">${escapeHtml(sql)};</pre>
+          `;
+
+          card.querySelector('.btn-copy-ddl').addEventListener('click', () => {
+            copyTextToClipboard(sql + ';');
+            showToast("DDL copiato negli appunti!", "info");
+          });
+
+          ddlContainer.appendChild(card);
+        });
+
+        lucide.createIcons();
+      } catch (err) {
+        ddlContainer.innerHTML = `<p class="text-rose-500 text-xs">Errore schema: ${err.message}</p>`;
+      }
+    }
+
+    // EXPORT DATABASE BINARY (.db)
+    btnExportDb.addEventListener('click', () => {
+      if (!db) return;
+      try {
+        const binaryArray = db.export();
+        const blob = new Blob([binaryArray], { type: 'application/x-sqlite3' });
+        downloadBlob(blob, currentFileName);
+        showToast("Database SQLite esportato correttamente!", "success");
+      } catch (err) {
+        showToast("Errore esportazione DB: " + err.message, "error");
+      }
+    });
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function copyTextToClipboard(text) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+      } catch (err) {
+        console.error("Errore copia appunti", err);
+      }
+      document.body.removeChild(textarea);
+    }
+
+    // FILE LOADING (Upload / Drag and Drop)
+    function loadDatabaseFromFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        try {
+          const uInt8Array = new Uint8Array(this.result);
+          db = new SQL.Database(uInt8Array);
+          currentFileName = file.name;
+          currentTable = null;
+          updateDbHeader();
+          refreshSchema();
+
+          // Auto-select first table if exists
+          const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1");
+          if (res.length && res[0].values.length) {
+            selectTable(res[0].values[0][0]);
+          } else {
+            renderTableData();
+          }
+
+          showToast(`File "${file.name}" caricato con successo!`, "success");
+        } catch (err) {
+          showToast("Impossibile leggere il file SQLite: " + err.message, "error");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    btnUpload.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length) {
+        loadDatabaseFromFile(e.target.files[0]);
+      }
+    });
+
+    btnNewDb.addEventListener('click', () => {
+      openConfirm("Nuovo Database", "Se hai modifiche non salvate andranno perse. Vuoi creare un nuovo DB vuoto?", () => {
+        createEmptyDatabase();
+      });
+    });
+
+    btnDemoDb.addEventListener('click', () => {
+      openConfirm("Carica Demo", "Sostituire l'attuale database con la demo di esempio?", () => {
+        loadDemoDatabase();
+      });
+    });
+
+    btnRefreshSchema.addEventListener('click', () => {
+      refreshSchema();
+      if (currentTable) renderTableData();
+      showToast("Schema ricaricato.", "info");
+    });
+
+    // DRAG AND DROP HANDLERS
+    const dropOverlay = document.getElementById('drop-overlay');
+    let dragCounter = 0;
+
+    window.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      dropOverlay.classList.remove('opacity-0');
+    });
+
+    window.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter === 0) {
+        dropOverlay.classList.add('opacity-0');
+      }
+    });
+
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dropOverlay.classList.add('opacity-0');
+
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        loadDatabaseFromFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    // Initialize WebAssembly on window load
+    window.onload = function () {
+      initSql();
+      lucide.createIcons();
+    };
+  </script>
+</body>
+</html>
